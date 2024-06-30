@@ -1,11 +1,19 @@
-﻿using BepInEx;
+#if EDITOR
+
+#else
+using BepInEx;
 using HarmonyLib;
+using Monke_Dimensions.API;
 using Monke_Dimensions.Behaviours;
-using Photon.Pun;
 using UnityEngine;
 using Utilla;
-using Utilla.Models;
-
+using System;
+using System.IO;
+using System.Reflection;
+using BepInEx.Logging;
+using Monke_Dimensions.Editor.Grabbables;
+using Photon.Pun;
+using Monke_Dimensions.Editor;
 namespace Monke_Dimensions;
 
 [BepInPlugin(GUID, NAME, VERSION)]
@@ -13,25 +21,39 @@ namespace Monke_Dimensions;
 [ModdedGamemode]
 internal class Main : BaseUnityPlugin
 {
+    public static AssetBundle assetBundle;
     internal static GameObject StandMD;
 
-    internal const string
+    private GameObject Manegerl;
+
+    public static ManualLogSource Logger;
+    // change the
+    private const string
         GUID = "chin.monkedimensions",
         NAME = "Monke Dimensions",
-        VERSION = "1.0.1";
+        VERSION = "1.3.0";
 
     internal Main()
     {
+        Logger = base.Logger;
         new Harmony(GUID).PatchAll(typeof(Main).Assembly);
+
         Utilla.Events.GameInitialized += (sender, e) =>
         {
-            AssetLoader.LoadAssets("Monke_Dimensions.Resources.stand");
-
+            assetBundle = LoadAssetBundle("Monke_Dimensions.Resources.stand");
+            Instantiate(assetBundle.LoadAsset<GameObject>("StandMD"));
+            GameObject.Find("StandMD(Clone)/RealStand").AddComponent<GorillaSurfaceOverride>();
             Comps.SetupComps();
 
             var dimensionManager = new GameObject("Dimension Manager").AddComponent<DimensionManager>();
             StandMD = GameObject.Find("StandMD(Clone)");
+            StandMD.transform.position = new(-68.617f, 11.422f, -81.257f);
+            StandMD.transform.rotation = Quaternion.Euler(0, 116.5558f, 0);
             new GameObject("Dimension Teleport").AddComponent<TeleportDimension>().transform.SetParent(dimensionManager.gameObject.transform);
+            
+            Comps.Confetti = assetBundle.LoadAsset<GameObject>("Confetti");
+            StandMD.transform.position = new(-68.617f, 11.422f, -81.257f);
+            StandMD.transform.rotation = Quaternion.Euler(0, 116.5558f, 0);
         };
 
         Events.RoomJoined += (sender, e) =>
@@ -40,7 +62,38 @@ internal class Main : BaseUnityPlugin
             bool inModded = gamemode.ToUpper().Contains("MODDED");
             StandMD.SetActive(inModded);
         };
+
+        DimensionEvents.OnDimensionTriggerEvent += (a, b, c, d) => { };
+
         Events.RoomLeft += (sender, e) => StandMD.SetActive(false);
+
+        Action<string> value = Logger.LogInfo;
+
+        DimensionEvents.OnDimensionEnter += value => { if (!PhotonNetwork.InRoom) return; Manegerl = new GameObject("MeowManager").AddComponent<GrabManager>().gameObject; };
+        DimensionEvents.OnDimensionLeave += value => { Manegerl?.SafeDestroy(); };
+    }
+
+    void Awake() {
+        string pluginPath = $"{Paths.PluginPath}\\MonkeDimensions\\MonkeDimensionsEditor.dll";
+
+        byte[] dllBytes = System.IO.File.ReadAllBytes(pluginPath);
+        Assembly loadedAssembly = Assembly.Load(dllBytes);
+
+        Debug.Log("Loading MonkeDimensions editor tools...");
+        gameObject.AddComponent<MonkeDimensionsEditorHandler>();
+
+        if (gameObject.GetComponent<MonkeDimensionsEditorHandler>() is null || loadedAssembly is null)
+            Debug.LogError("MonkeDimension editor tools failed to load for unknown reasons");
+        else
+            Debug.Log("Successfully loaded MonkeDimension editor tools");
+    }
+
+    public AssetBundle LoadAssetBundle(string path)
+    {
+        Stream stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(path);
+        AssetBundle bundle = AssetBundle.LoadFromStream(stream);
+        stream.Close();
+        return bundle;
     }
 
     [ModdedGamemodeJoin]
@@ -48,3 +101,5 @@ internal class Main : BaseUnityPlugin
     [ModdedGamemodeLeave]
     private void OnLeave() => StandMD.SetActive(false);
 }
+
+#endif
